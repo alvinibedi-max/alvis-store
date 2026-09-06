@@ -1,0 +1,9 @@
+import {json} from '@remix-run/node';
+import {Form, Link, useActionData, useNavigation} from '@remix-run/react';
+import {redirect} from '@remix-run/node';
+import AuthLayout from '~/components/AuthLayout';
+import {authenticate} from '../../server/auth/service';
+import {createSession} from '../../server/security/session';
+import {sessionCookie} from '../../server/security/cookies';
+export async function action({request}:{request:Request}){const fd=await request.formData();try{const user=await authenticate(String(fd.get('email')||''),String(fd.get('password')||''));const s=await createSession(user.id);return redirect('/account',{headers:{'Set-Cookie':sessionCookie(s.raw,s.expiresAt)}});}catch(e){return json({error:e instanceof Error?e.message:'Unable to sign in.'},{status:400});}}
+export default function Login(){const data=useActionData<typeof action>();const nav=useNavigation();return <AuthLayout title="Welcome Back" subtitle="Sign in securely to continue shopping"><Form method="post" className="space-y-4">{data?.error&&<div className="text-red-700 text-sm">{data.error}</div>}<input name="email" type="email" required placeholder="you@example.com" className="w-full px-4 py-3 border rounded-lg"/><input name="password" type="password" required placeholder="Password" className="w-full px-4 py-3 border rounded-lg"/><div className="grid grid-cols-2 gap-3"><a href="/auth/google" className="border rounded-lg py-3 text-center font-semibold">Continue with Google</a><a href="/auth/apple" className="border rounded-lg py-3 text-center font-semibold">Continue with Apple</a></div><div className="text-center text-xs text-gray-500">or use email</div><button disabled={nav.state==='submitting'} className="w-full bg-purple-600 text-white py-3 rounded-lg font-bold">{nav.state==='submitting'?'Signing in…':'Sign in'}</button></Form><p className="mt-6 text-sm">No account? <Link to="/auth/register" className="text-purple-600">Create one</Link></p></AuthLayout>}

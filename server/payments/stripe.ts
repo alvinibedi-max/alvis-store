@@ -1,0 +1,14 @@
+import {createHmac,timingSafeEqual} from 'node:crypto';
+const api='https://api.stripe.com/v1';
+function requireStripe(){if(!process.env.STRIPE_SECRET_KEY)throw new Error('Stripe is not configured.');}
+export async function createStripeCheckoutSession(input:{orderId:string;amount:number;email:string;successUrl:string;cancelUrl:string;idempotencyKey:string;items:{name:string;quantity:number;unitPrice:number}[]}){requireStripe();const body=new URLSearchParams({'mode':'payment','customer_email':input.email,'success_url':input.successUrl,'cancel_url':input.cancelUrl,'client_reference_id':input.orderId,'metadata[checkout_id]':input.orderId});input.items.forEach((item,i)=>{body.set(`line_items[${i}][price_data][currency]`,'gbp');body.set(`line_items[${i}][price_data][product_data][name]`,item.name);body.set(`line_items[${i}][price_data][unit_amount]`,String(Math.round(item.unitPrice*100)));body.set(`line_items[${i}][quantity]`,String(item.quantity));});const r=await fetch(`${api}/checkout/sessions`,{method:'POST',headers:{Authorization:`Bearer ${process.env.STRIPE_SECRET_KEY}`,'Content-Type':'application/x-www-form-urlencoded','Idempotency-Key':input.idempotencyKey},body});if(!r.ok)throw new Error('Unable to start payment.');return r.json() as Promise<{id:string;url:string;payment_status:string}>;}
+export function verifyStripeSignature(raw:string,header:string|null){const secret=process.env.STRIPE_WEBHOOK_SECRET;if(!secret||!header)return false;const fields=header.split(',');const timestampPart=fields.find(x=>x.startsWith('t='));const timestamp=Number(timestampPart?.slice(2));const signatures=fields.filter(x=>x.startsWith('v1=')).map(x=>x.slice(3));if(!timestamp||!signatures.length||Math.abs(Date.now()/1000-timestamp)>300)return false;const expected=createHmac('sha256',secret).update(`${timestamp}.${raw}`).digest('hex');return signatures.some(sig=>{try{return timingSafeEqual(Buffer.from(expected),Buffer.from(sig));}catch{return false;}});}
+
+export async function retrieveStripeCheckoutSession(sessionId:string){
+  requireStripe();
+  const r=await fetch(`${api}/checkout/sessions/${encodeURIComponent(sessionId)}?expand[]=payment_intent`,{headers:{Authorization:`Bearer ${process.env.STRIPE_SECRET_KEY}`}});
+  if(!r.ok)throw new Error('Unable to verify payment with Stripe.');
+  return r.json() as Promise<any>;
+}
+
+export async function createStripeRefund(paymentIntent:string,amountGbp?:number){requireStripe();const body=new URLSearchParams({payment_intent:paymentIntent});if(amountGbp!==undefined)body.set('amount',String(Math.round(amountGbp*100)));const r=await fetch(`${api}/refunds`,{method:'POST',headers:{Authorization:`Bearer ${process.env.STRIPE_SECRET_KEY}`,'Content-Type':'application/x-www-form-urlencoded'},body});if(!r.ok)throw new Error('Unable to create refund.');return r.json();}

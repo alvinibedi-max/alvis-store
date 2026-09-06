@@ -1,0 +1,4 @@
+import {createCipheriv,createDecipheriv,createHash,randomBytes} from 'node:crypto';
+function key(){const secret=process.env.ALVIS_ENCRYPTION_KEY;if(!secret)throw new Error('ALVIS_ENCRYPTION_KEY is not configured.');return createHash('sha256').update(secret).digest();}
+export function seal(value:string){const iv=randomBytes(12);const c=createCipheriv('aes-256-gcm',key(),iv);const data=Buffer.concat([c.update(value,'utf8'),c.final()]);return `${iv.toString('base64url')}.${c.getAuthTag().toString('base64url')}.${data.toString('base64url')}`;}
+export function unseal(value:string){const [ivS,tagS,dataS]=value.split('.');const d=createDecipheriv('aes-256-gcm',key(),Buffer.from(ivS,'base64url'));d.setAuthTag(Buffer.from(tagS,'base64url'));return Buffer.concat([d.update(Buffer.from(dataS,'base64url')),d.final()]).toString('utf8');}

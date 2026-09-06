@@ -1,0 +1,1 @@
+import {redirect} from '@remix-run/node';import {oauthState,appleUrl} from '../../server/auth/oauth';export async function loader(){const state=await oauthState('apple');return redirect(appleUrl(state));}export default function Apple(){return null;}

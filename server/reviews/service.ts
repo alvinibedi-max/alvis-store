@@ -1,0 +1,5 @@
+import {randomBytes} from 'node:crypto';
+import {redisCommand,redisGetJson,redisSetJson} from '../db/redis';
+export type Review={id:string;checkoutId:string;addressVersion:number;reasonCode:string;policyVersion:string;aiResults:any[];status:'OPEN'|'APPROVED'|'BLOCKED'|'CUSTOMER_ACTION';decision?:string;reason?:string;createdAt:string;updatedAt:string};
+export async function createReview(input:Omit<Review,'id'|'status'|'createdAt'|'updatedAt'>){const id=`rev_${randomBytes(10).toString('hex')}`;const now=new Date().toISOString();const r={...input,id,status:'OPEN' as const,createdAt:now,updatedAt:now};await redisSetJson(`review:${id}`,r);await redisCommand('SADD','reviews',id);return r;}
+export async function decideReview(id:string,decision:Review['status'],reason:string){const r=await redisGetJson<Review>(`review:${id}`);if(!r||r.status!=='OPEN')throw new Error('Review is not open.');r.status=decision;r.decision=decision;r.reason=reason;r.updatedAt=new Date().toISOString();await redisSetJson(`review:${id}`,r);return r;}

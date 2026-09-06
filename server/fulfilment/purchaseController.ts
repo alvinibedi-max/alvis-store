@@ -1,0 +1,3 @@
+import {assertSupplierPurchasingEnabled,SupplierAdapter,SupplierPurchaseRequest} from './supplierAdapter';
+import {getSupplier} from './suppliers';
+export async function purchaseFromSupplier(adapter:SupplierAdapter,input:SupplierPurchaseRequest){assertSupplierPurchasingEnabled();const supplier=await getSupplier(input.supplierId);if(!supplier||supplier.status!=='ACTIVE')throw new Error('Supplier is not active.');const result=await adapter.purchase(input);if(result.success&&typeof result.amount==='number'&&result.amount>input.maxSpend)throw new Error('Supplier charged above the approved spend cap.');return result;}

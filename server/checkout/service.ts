@@ -1,0 +1,16 @@
+import {randomBytes} from 'node:crypto';
+import {redisGetJson, redisSetJson, redisCommand} from '../db/redis';
+import {independentAddressInvestigations, type AddressInput} from './address';
+import {issueApprovalToken} from './approval';
+import {PROTECTED_ORDER_STATES, NON_SHIPPABLE_STATES} from '../commerce/securityPolicy';
+
+export type Checkout = {checkoutId:string;attemptId:string;checkoutVersion:number;state:'PENDING'|'PHONE_VERIFIED'|'ADDRESS_CHECK'|'AI_REVIEW'|'APPROVED'|'PAYMENT';userId?:string;email:string;address?:AddressInput;addressVersion:number;policyVersion:string;validationVersion:string;expiresAt:string;approvalTokenId?:string};
+const key=(id:string)=>`checkout:${id}`;
+const nowPlus=(minutes:number)=>new Date(Date.now()+minutes*60000).toISOString();
+
+export async function createCheckout(input:{email:string;userId?:string}){const c:Checkout={checkoutId:`chk_${randomBytes(12).toString('hex')}`,attemptId:`att_${randomBytes(12).toString('hex')}`,checkoutVersion:1,state:'PENDING',email:input.email,userId:input.userId,addressVersion:0,policyVersion:'2026-09-05',validationVersion:'v1',expiresAt:nowPlus(30)};await redisSetJson(key(c.checkoutId),c,1800);return c;}
+export async function getCheckout(id:string){const c=await redisGetJson<Checkout>(key(id)); if(c&&Date.parse(c.expiresAt)<=Date.now()) return null; return c;}
+export async function verifyCheckoutPhone(id:string,userId?:string){const c=await getCheckout(id); if(!c) throw new Error('Checkout expired.'); if(userId && c.userId!==userId) throw new Error('You cannot modify this checkout.'); c.state='PHONE_VERIFIED'; c.checkoutVersion++; await redisSetJson(key(id),c,1800); return c;}
+export async function setCheckoutAddress(id:string,address:AddressInput,userId?:string){const c=await getCheckout(id);if(!c)throw new Error('Checkout expired.');if(userId && c.userId!==userId)throw new Error('You cannot modify this checkout.');if(c.state!=='PHONE_VERIFIED')throw new Error('Phone verification is required before delivery information.');c.address=address;c.addressVersion++;c.checkoutVersion++;c.state='ADDRESS_CHECK';await redisSetJson(key(id),c,1800);return c;}
+export async function runAddressChecks(id:string,userId?:string){const c=await getCheckout(id);if(!c||!c.address)throw new Error('Delivery address is required.');if(userId && c.userId!==userId)throw new Error('You cannot modify this checkout.');const inv=independentAddressInvestigations(c.address);if(inv.ai2.classification==='PROHIBITED'){c.state='AI_REVIEW';await redisSetJson(key(id),c,1800);return {checkout:c,investigations:inv,approved:false,reasonCode:'PROHIBITED_DESTINATION'};}if(inv.conflict||inv.ai1.needsHumanReview||inv.ai2.needsHumanReview){c.state='AI_REVIEW';await redisSetJson(key(id),c,1800);return {checkout:c,investigations:inv,approved:false,reasonCode:'HUMAN_REVIEW_REQUIRED'};}c.state='APPROVED';const approval=await issueApprovalToken({checkoutId:c.checkoutId,attemptId:c.attemptId,addressVersion:c.addressVersion,policyVersion:c.policyVersion,expiresAt:c.expiresAt});c.approvalTokenId=approval.tokenId;await redisSetJson(key(id),c,1800);return {checkout:c,investigations:inv,approved:true,approvalToken:approval.token};}
+export function canShipState(state:string){return !NON_SHIPPABLE_STATES.has(state as never) && !PROTECTED_ORDER_STATES.has(state as never);}

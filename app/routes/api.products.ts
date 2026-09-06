@@ -1,0 +1,1 @@
+import {json} from '@remix-run/node';import {PRODUCTS} from '../lib/data';export async function loader(){return json(PRODUCTS.map(p=>({id:p.id,name:p.name,price:p.price,image:p.image,inStock:p.inStock})));}export default function ProductsApi(){return null;}

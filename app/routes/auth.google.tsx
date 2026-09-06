@@ -1,0 +1,1 @@
+import {redirect} from '@remix-run/node';import {oauthState,googleUrl} from '../../server/auth/oauth';export async function loader(){const state=await oauthState('google');return redirect(googleUrl(state));}export default function Google(){return null;}
